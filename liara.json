@@ -1,15 +1,13 @@
 {
+  "version": "1",
   "platform": "python",
   "app": "tankhah-app",
   "port": 8000,
-  "build": {
-    "location": "iran"
-  },
+  "start": "streamlit run main.py --server.port $PORT",
   "disks": [
     {
       "name": "data",
       "mountTo": "/app"
     }
-  ],
-  "start": "streamlit run main.py --server.port $PORT"
+  ]
 }
