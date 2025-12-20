@@ -25,33 +25,37 @@ def run_streamlit():
 if __name__ == "__main__":
     run_streamlit()
 
-# --- کد اصلی برنامه تنخواه ---
-
-# نام فایل دیتابیس (در پوشه متصل به دیسک)
+# --- تنظیمات دیتابیس ---
 DB_FILE = "tankhah_data.csv"
 
 def load_data():
     if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE)
+        try:
+            return pd.read_csv(DB_FILE)
+        except:
+            return pd.DataFrame(columns=["تاریخ", "دسته بندی", "مبلغ", "توضیحات"])
     return pd.DataFrame(columns=["تاریخ", "دسته بندی", "مبلغ", "توضیحات"])
 
 def save_data(df):
     df.to_csv(DB_FILE, index=False)
 
+# --- ظاهر برنامه ---
 st.set_page_config(page_title="سیستم ثبت تنخواه", layout="centered")
 
 st.title("💸 ثبت هزینه‌های تنخواه")
 st.write("لطفاً اطلاعات فاکتور را وارد کنید:")
 
-# فرم ورود اطلاعات
+# --- فرم ورود اطلاعات ---
 with st.form("tankhah_form", clear_on_submit=True):
     date = st.date_input("تاریخ فاکتور", datetime.now())
     category = st.selectbox("دسته بندی", ["خرید اقلام", "ایاب و ذهاب", "تعمیرات", "سایر"])
     amount = st.number_input("مبلغ (تومان)", min_value=0, step=1000)
     description = st.text_area("توضیحات")
     
+    # دکمه ثبت که حتماً باید داخل بلاک form باشه
     submit_button = st.form_submit_button("ثبت در سیستم")
 
+# --- پردازش اطلاعات بعد از کلیک روی دکمه ---
 if submit_button:
     if amount > 0:
         new_data = {
@@ -64,10 +68,11 @@ if submit_button:
         df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
         save_data(df)
         st.success("✅ فاکتور با موفقیت ثبت شد.")
+        st.balloons() # یکم شادی بعد از موفقیت!
     else:
         st.error("⚠️ لطفا مبلغ را وارد کنید.")
 
-# نمایش لیست هزینه‌های قبلی
+# --- نمایش لیست هزینه‌های قبلی ---
 st.divider()
 st.subheader("📋 لیست هزینه‌های اخیر")
 data = load_data()
