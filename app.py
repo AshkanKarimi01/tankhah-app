@@ -16,7 +16,7 @@ st.markdown("""
         text-align: right;
     }
     </style>
-    """, unsafe_allow_name_with_html=True)
+    """, unsafe_allow_html=True)
 
 st.title("📝 ثبت هزینه جدید")
 
@@ -57,4 +57,5 @@ with st.container():
             
             st.success("✅ فاکتور با موفقیت ثبت شد.")
         else:
+
             st.error("⚠️ لطفاً مبلغ را وارد کرده و عکس فاکتور را بگیرید.")
