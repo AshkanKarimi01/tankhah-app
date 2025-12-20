@@ -8,5 +8,5 @@
       "mountTo": "/app"
     }
   ],
-  "start": "streamlit run app.py --server.port $PORT"
+  "start": "streamlit run main.py --server.port $PORT"
 }
