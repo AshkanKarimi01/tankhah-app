@@ -1,9 +1,7 @@
 {
-  "version": "1",
-  "platform": "python",
+  "platform": "docker",
   "app": "tankhah-app",
-  "port": 8000,
-  "start": "streamlit run main.py --server.port $PORT",
+  "port": 80,
   "disks": [
     {
       "name": "data",
