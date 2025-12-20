@@ -6,10 +6,19 @@ import jdatetime
 from datetime import datetime
 import streamlit.web.cli as stcli
 
+# --- بخش خود-اجرا برای لیارا ---
+def run_streamlit():
+    if "streamlit" not in sys.modules:
+        os.environ["STREAMLIT_SERVER_PORT"] = os.environ.get("PORT", "80")
+        sys.argv = ["streamlit", "run", __file__, "--server.port", os.environ["STREAMLIT_SERVER_PORT"], "--server.address", "0.0.0.0"]
+        sys.exit(stcli.main())
+
+if __name__ == "__main__":
+    run_streamlit()
+
 # --- تنظیمات دیتابیس ---
 DB_FILE = "tankhah_data.csv"
 UPLOAD_DIR = "uploaded_images"
-
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
@@ -22,81 +31,62 @@ def load_data():
 def save_data(df):
     df.to_csv(DB_FILE, index=False)
 
-# --- ظاهر برنامه و CSS برای پرینت ---
+# --- ظاهر برنامه ---
 st.set_page_config(page_title="تنخواه آنلاین", layout="centered")
+st.title("💸 سیستم مدیریت تنخواه")
 
-# مخفی کردن المان‌های اضافی موقع پرینت
-st.markdown("""
-    <style>
-    @media print {
-        .stButton, .stFileUploader, .stForm, header, footer {
-            display: none !important;
-        }
-        .main {
-            background-color: white !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("💸 مدیریت و آرشیو تنخواه")
-
-# --- منوی اصلی (تب‌بندی) ---
-tab1, tab2 = st.tabs(["📝 ثبت فاکتور جدید", "📂 آرشیو و گزارش"])
+# ایجاد تب‌ها (این همون بخشیه که توی عکس کد شما نبود)
+tab1, tab2 = st.tabs(["📝 ثبت هزینه جدید", "📂 آرشیو و گزارشات"])
 
 with tab1:
     with st.form("tankhah_form", clear_on_submit=True):
-        today = jdatetime.date.today().strftime("%Y/%m/%d")
-        date = st.text_input("تاریخ (شمسی)", value=today)
-        category = st.selectbox("دسته بندی", ["خرید اقلام", "ایاب و ذهاب", "تعمیرات", "سایر"])
-        amount = st.number_input("مبلغ (تومان)", min_value=0, step=1000)
-        description = st.text_area("توضیحات")
-        uploaded_file = st.file_uploader("عکس فاکتور", type=['jpg', 'jpeg', 'png'])
-        submit_button = st.form_submit_button("ثبت فاکتور")
-
-    if submit_button and amount > 0:
-        image_path = "بدون تصویر"
-        if uploaded_file is not None:
-            file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uploaded_file.name}"
-            image_path = os.path.join(UPLOAD_DIR, file_name)
-            with open(image_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+        # تنظیم تاریخ شمسی
+        now_shamsi = jdatetime.date.today().strftime("%Y/%m/%d")
+        date_sh = st.text_input("تاریخ فاکتور (شمسی)", value=now_shamsi)
         
-        new_data = {"تاریخ": date, "دسته بندی": category, "مبلغ": f"{amount:,}", "توضیحات": description, "تصویر": image_path}
+        cat = st.selectbox("دسته بندی", ["خرید اقلام", "ایاب و ذهاب", "تعمیرات", "سایر"])
+        price = st.number_input("مبلغ (تومان)", min_value=0, step=1000)
+        desc = st.text_area("توضیحات")
+        file = st.file_uploader("عکس فاکتور", type=['jpg', 'png', 'jpeg'])
+        
+        submit = st.form_submit_button("ثبت در سیستم")
+
+    if submit and price > 0:
+        img_path = "بدون تصویر"
+        if file is not None:
+            fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.name}"
+            img_path = os.path.join(UPLOAD_DIR, fname)
+            with open(img_path, "wb") as f:
+                f.write(file.getbuffer())
+        
+        new_row = {"تاریخ": date_sh, "دسته بندی": cat, "مبلغ": f"{price:,}", "توضیحات": desc, "تصویر": img_path}
         df = load_data()
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         save_data(df)
-        st.success("✅ فاکتور با موفقیت ثبت شد.")
+        st.success("✅ با موفقیت ثبت شد.")
 
 with tab2:
-    data = load_data()
-    if not data.empty:
-        # --- بخش مشاهده عکس‌های قبلی ---
-        st.subheader("🖼️ مشاهده تصاویر فاکتورها")
-        options = [f"{idx}: {row['تاریخ']} - {row['مبلغ']} تومان" for idx, row in data.iterrows()]
-        selected_option = st.selectbox("فاکتور مورد نظر را انتخاب کنید:", options[::-1]) # نمایش از جدید به قدیم
+    df_list = load_data()
+    if not df_list.empty:
+        st.subheader("🖼️ مشاهده عکس فاکتورها")
+        # معکوس کردن لیست برای نمایش جدیدترین‌ها در بالا
+        options = [f"{i}: {r['تاریخ']} - {r['مبلغ']}" for i, r in df_list.iterrows()]
+        sel = st.selectbox("انتخاب فاکتور:", options[::-1])
         
-        idx_to_view = int(selected_option.split(":")[0])
-        img_url = data.loc[idx_to_view, "تصویر"]
+        idx = int(sel.split(":")[0])
+        path = df_list.loc[idx, "تصویر"]
         
-        if img_url != "بدون تصویر" and os.path.exists(img_url):
-            st.image(img_url, caption=f"تصویر فاکتور {data.loc[idx_to_view, 'تاریخ']}", use_container_width=True)
+        if path != "بدون تصویر" and os.path.exists(path):
+            st.image(path, use_container_width=True)
         else:
-            st.warning("برای این فاکتور تصویری ثبت نشده است.")
-
+            st.warning("تصویری ندارد")
+        
         st.divider()
+        st.subheader("📋 جدول کل هزینه‌ها")
+        st.dataframe(df_list, use_container_width=True)
         
-        # --- بخش جدول و پرینت ---
-        st.subheader("📋 لیست کل هزینه‌ها")
-        st.dataframe(data, use_container_width=True)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            csv = data.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 دانلود فایل اکسل (CSV)", data=csv, file_name="report.csv", mime='text/csv')
-        
-        with col2:
-            if st.button("🖨️ آماده‌سازی برای پرینت"):
-                st.info("حالا دکمه Ctrl+P را بزنید تا فقط لیست چاپ شود.")
+        # دکمه دانلود
+        csv_data = df_list.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("📥 دانلود فایل اکسل", csv_data, "report.csv", "text/csv")
     else:
-        st.info("هنوز موردی ثبت نشده است.")
+        st.info("هنوز دیتایی ثبت نشده.")
