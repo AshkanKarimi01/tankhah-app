@@ -1,61 +1,77 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
 import os
+import sys
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+import streamlit.web.cli as stcli
 
-# تنظیمات ظاهری (راست‌چین برای فارسی)
-st.set_page_config(page_title="سیستم تنخواه", layout="centered")
+# --- بخش خود-اجرا برای لیارا ---
+def run_streamlit():
+    if "streamlit" not in sys.modules:
+        if "STREAMLIT_SERVER_PORT" not in os.environ:
+            os.environ["STREAMLIT_SERVER_PORT"] = os.environ.get("PORT", "8000")
+        
+        sys.argv = [
+            "streamlit",
+            "run",
+            __file__,
+            "--server.port",
+            os.environ["STREAMLIT_SERVER_PORT"],
+            "--server.address",
+            "0.0.0.0",
+        ]
+        sys.exit(stcli.main())
 
-# استایل دهی برای فونت و جهت متن
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn&display=swap');
-    html, body, [class*="css"]  {
-        font-family: 'Vazirmatn', sans-serif;
-        direction: rtl;
-        text-align: right;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+if __name__ == "__main__":
+    run_streamlit()
 
-st.title("📝 ثبت هزینه جدید")
+# --- کد اصلی برنامه تنخواه ---
 
-# ایجاد دیتابیس ساده (فایل CSV) اگر وجود نداشته باشد
-DB_FILE = "tankhah_db.csv"
-if not os.path.exists(DB_FILE):
-    df = pd.DataFrame(columns=["تاریخ", "مبلغ", "دسته", "توضیحات", "نام_فایل"])
-    df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+# نام فایل دیتابیس (در پوشه متصل به دیسک)
+DB_FILE = "tankhah_data.csv"
 
-# فرم ثبت اطلاعات
-with st.container():
-    amount = st.number_input("مبلغ هزینه (ریال):", min_value=0, step=10000)
-    category = st.selectbox("نوع هزینه:", ["بنزین/سفر", "خرید قطعات", "پذیرایی/غذا", "ابزارآلات", "سایر"])
-    description = st.text_area("توضیحات فاکتور:")
+def load_data():
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["تاریخ", "دسته بندی", "مبلغ", "توضیحات"])
+
+def save_data(df):
+    df.to_csv(DB_FILE, index=False)
+
+st.set_page_config(page_title="سیستم ثبت تنخواه", layout="centered")
+
+st.title("💸 ثبت هزینه‌های تنخواه")
+st.write("لطفاً اطلاعات فاکتور را وارد کنید:")
+
+# فرم ورود اطلاعات
+with st.form("tankhah_form", clear_on_submit=True):
+    date = st.date_input("تاریخ فاکتور", datetime.now())
+    category = st.selectbox("دسته بندی", ["خرید اقلام", "ایاب و ذهاب", "تعمیرات", "سایر"])
+    amount = st.number_input("مبلغ (تومان)", min_value=0, step=1000)
+    description = st.text_area("توضیحات")
     
-    # دکمه دوربین
-    img_file = st.camera_input("📸 گرفتن عکس از فاکتور")
+    submit_button = st.form_submit_button("ثبت در سیستم")
 
-    if st.button("ثبت نهایی و ارسال"):
-        if img_file is not None and amount > 0:
-            # ذخیره عکس در پوشه
-            if not os.path.exists("images"): os.makedirs("images")
-            img_name = f"images/IMG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            with open(img_name, "wb") as f:
-                f.write(img_file.getbuffer())
-            
-            # ثبت در دیتابیس
-            new_entry = {
-                "تاریخ": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "مبلغ": f"{amount:,}",
-                "دسته": category,
-                "توضیحات": description,
-                "نام_فایل": img_name
-            }
-            df = pd.read_csv(DB_FILE)
-            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-            df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-            
-            st.success("✅ فاکتور با موفقیت ثبت شد.")
-        else:
+if submit_button:
+    if amount > 0:
+        new_data = {
+            "تاریخ": str(date),
+            "دسته بندی": category,
+            "مبلغ": amount,
+            "توضیحات": description
+        }
+        df = load_data()
+        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        save_data(df)
+        st.success("✅ فاکتور با موفقیت ثبت شد.")
+    else:
+        st.error("⚠️ لطفا مبلغ را وارد کنید.")
 
-            st.error("⚠️ لطفاً مبلغ را وارد کرده و عکس فاکتور را بگیرید.")
+# نمایش لیست هزینه‌های قبلی
+st.divider()
+st.subheader("📋 لیست هزینه‌های اخیر")
+data = load_data()
+if not data.empty:
+    st.dataframe(data.tail(10), use_container_width=True)
+else:
+    st.info("هنوز هیچ هزینه‌ای ثبت نشده است.")
