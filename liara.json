@@ -2,6 +2,9 @@
   "platform": "python",
   "app": "tankhah-app",
   "port": 8000,
+  "build": {
+    "location": "iran"
+  },
   "disks": [
     {
       "name": "data",
