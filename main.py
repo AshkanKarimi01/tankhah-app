@@ -5,13 +5,48 @@ import jdatetime
 from datetime import datetime
 import io
 
-# --- تنظیمات دیتابیس و فایل‌ها ---
+# --- تنظیمات اولیه دیتابیس و فایل‌ها ---
 DB_FILE = "tankhah_data.csv"
 UPLOAD_DIR = "uploaded_images"
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
+# --- سیستم لاگین با دو کاربر ---
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if st.session_state["password_correct"]:
+        return True
+
+    st.set_page_config(page_title="ورود به سیستم", layout="centered")
+    st.markdown("<h2 style='text-align: center;'>🔒 ورود به سیستم مدیریت تنخواه</h2>", unsafe_allow_html=True)
+    
+    with st.container():
+        user_input = st.text_input("نام کاربری", key="username")
+        password_input = st.text_input("رمز عبور", type="password", key="password")
+        
+        if st.button("ورود به پنل"):
+            # تعریف کاربران بر اساس درخواست شما
+            users = {
+                "barijani": "1234",
+                "talebi": "1234"
+            }
+            
+            if user_input in users and users[user_input] == password_input:
+                st.session_state["password_correct"] = True
+                st.session_state["current_user"] = user_input
+                st.rerun()
+            else:
+                st.error("❌ نام کاربری یا رمز عبور اشتباه است.")
+    return False
+
+# توقف اجرا اگر کاربر لاگین نکرده باشد
+if not check_password():
+    st.stop()
+
+# --- توابع مدیریت داده‌ها ---
 def load_data():
     if os.path.exists(DB_FILE):
         try:
@@ -19,30 +54,36 @@ def load_data():
             return df
         except:
             pass
-    return pd.DataFrame(columns=["شماره فاکتور", "تاریخ", "دسته بندی", "مبلغ", "توضیحات", "تصویر"])
+    return pd.DataFrame(columns=["شماره فاکتور", "تاریخ", "دسته بندی", "مبلغ", "توضیحات", "تصویر", "ثبت کننده"])
 
 def save_data(df):
     df.to_csv(DB_FILE, index=False)
 
-# --- ظاهر برنامه ---
-st.set_page_config(page_title="مدیریت تنخواه حرفه‌ای", layout="wide")
-st.markdown("""<style> .stButton>button {width: 100%;} .main {direction: rtl; text-align: right;} </style>""", unsafe_allow_html=True)
+# --- تنظیمات ظاهر برنامه اصلی ---
+st.set_page_config(page_title="پنل جامع مدیریت تنخواه", layout="wide")
+st.markdown("""
+    <style>
+    .stButton>button {width: 100%;}
+    .main {direction: rtl; text-align: right;}
+    div[data-testid="stExpander"] div[role="button"] p { font-size: 1.2rem; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# سایدبار برای خروج و نمایش کاربر فعال
+with st.sidebar:
+    st.write(f"👤 کاربر فعال: **{st.session_state['current_user']}**")
+    if st.button("خروج از سیستم"):
+        st.session_state["password_correct"] = False
+        st.rerun()
 
 st.title("💸 پنل جامع مدیریت تنخواه")
 
 tab1, tab2, tab3 = st.tabs(["📝 ثبت فاکتور", "📊 گزارش و خروجی", "🛠️ ویرایش و مدیریت"])
 
-# --- لیست کامل ۹تایی دسته‌بندی‌ها ---
 CATEGORIES = [
-    "غذا", 
-    "اسنپ و آژانس", 
-    "پیک", 
-    "باربری", 
-    "پست و تیپاکس", 
-    "نوشت افزار", 
-    "کارمزد", 
-    "آبدارخانه و پذیرایی", 
-    "متفرقه"
+    "غذا", "اسنپ و آژانس", "پیک", "باربری", 
+    "پست و تیپاکس", "نوشت افزار", "کارمزد", 
+    "آبدارخانه و پذیرایی", "متفرقه"
 ]
 
 # --- تب ۱: ثبت فاکتور جدید ---
@@ -62,7 +103,8 @@ with tab1:
 
     if submit and amount_in > 0:
         df = load_data()
-        next_id = 1 if df.empty else df["شماره فاکتور"].max() + 1
+        # تولید شماره فاکتور خودکار از ۱
+        next_id = 1 if df.empty else int(df["شماره فاکتور"].max()) + 1
         
         img_path = "بدون تصویر"
         if file_in:
@@ -77,16 +119,18 @@ with tab1:
             "دسته بندی": cat_in,
             "مبلغ": int(amount_in),
             "توضیحات": desc_in,
-            "تصویر": img_path
+            "تصویر": img_path,
+            "ثبت کننده": st.session_state['current_user']
         }
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         save_data(df)
-        st.success(f"✅ فاکتور شماره {next_id} با موفقیت ثبت شد.")
+        st.success(f"✅ فاکتور شماره {next_id} با موفقیت توسط {st.session_state['current_user']} ثبت شد.")
 
 # --- تب ۲: گزارش، مشاهده عکس و خروجی اکسل ---
 with tab2:
     df_rep = load_data()
     if not df_rep.empty:
+        # نمایش مبالغ با فرمت سه رقم سه رقم
         display_df = df_rep.copy()
         display_df["مبلغ"] = display_df["مبلغ"].apply(lambda x: f"{int(x):,}")
         
@@ -97,8 +141,8 @@ with tab2:
         col_img, col_exl = st.columns([2, 1])
         
         with col_img:
-            st.subheader("🔍 مشاهده سریع عکس فاکتور")
-            selected_id = st.selectbox("انتخاب شماره فاکتور برای مشاهده عکس:", df_rep["شماره فاکتور"].tolist()[::-1])
+            st.subheader("🔍 مشاهده عکس فاکتور")
+            selected_id = st.selectbox("انتخاب شماره فاکتور:", df_rep["شماره فاکتور"].tolist()[::-1])
             row = df_rep[df_rep["شماره فاکتور"] == selected_id].iloc[0]
             if row["تصویر"] != "بدون تصویر" and os.path.exists(row["تصویر"]):
                 st.image(row["تصویر"], caption=f"عکس فاکتور شماره {selected_id}", use_container_width=True)
@@ -112,7 +156,7 @@ with tab2:
                 df_rep.to_excel(writer, index=False, sheet_name='گزارش تنخواه')
             
             st.download_button(
-                label="دانلود فایل Excel حرفه‌ای",
+                label="📥 دانلود فایل Excel",
                 data=output.getvalue(),
                 file_name=f"Report_{jdatetime.date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -129,8 +173,8 @@ with tab3:
     df_edit = load_data()
     if not df_edit.empty:
         st.subheader("✏️ ویرایش فاکتور موجود")
-        edit_id = st.selectbox("شماره فاکتور مورد نظر برای ویرایش:", df_edit["شماره فاکتور"].tolist())
-        edit_idx = df_edit[df_edit["شماره فاکتور"] == edit_id].index[0]
+        edit_id = st.selectbox("شماره فاکتور برای ویرایش:", df_edit["شماره فاکتور"].tolist())
+        edit_idx = df_edit[df_edit["شماره fاکتور"] == edit_id].index[0]
         
         with st.form("edit_form"):
             new_amount = st.number_input("اصلاح مبلغ", value=int(df_edit.at[edit_idx, "مبلغ"]))
