@@ -25,7 +25,7 @@ def check_password():
     u_in = st.text_input("نام کاربری")
     p_in = st.text_input("رمز عبور", type="password")
     if st.button("ورود"):
-        users = {"barijani": "1234", "talebi": "1234"}
+        users = {"barjani": "1234", "talebi": "1234"}
         if u_in in users and users[u_in] == p_in:
             st.session_state["password_correct"] = True
             st.session_state["current_user"] = u_in
@@ -189,3 +189,4 @@ with tab4:
     if os.path.exists(LOG_FILE):
         st.subheader("📜 گزارش فعالیت‌های کاربران")
         st.table(pd.read_csv(LOG_FILE).sort_values(by="زمان", ascending=False))
+
