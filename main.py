@@ -13,7 +13,7 @@ LOG_FILE = "audit_log.csv"
 # --- توابع کمکی ---
 def format_money(amount):
     try:
-        val = int(amount)
+        val = int(float(amount))
         if val == 0: return "صفر ریال"
         toman = val // 10
         return f"{val:,} ریال (معادل {toman:,} تومان)"
@@ -47,30 +47,38 @@ if not st.session_state["logged_in"]:
     st.subheader("🔐 ورود به مدیریت تنخواه")
     u_in = st.text_input("نام کاربری")
     p_in = st.text_input("رمز عبور", type="password")
-    
-    users = {
-        "admin": "admin123@",
-        "barjani": "1234",
-        "talebi": "1234"
-    }
-    
+    users = {"admin": "admin123@", "barjani": "1234", "talebi": "1234"}
     if st.button("ورود"):
         if u_in in users and users[u_in] == p_in:
             st.session_state["logged_in"] = True
             st.session_state["user"] = u_in
             st.rerun()
-        else:
-            st.error("نام کاربری یا رمز عبور اشتباه است!")
+        else: st.error("نام کاربری یا رمز عبور اشتباه است!")
     st.stop()
 
-# --- بارگذاری داده‌ها ---
+# --- بارگذاری و پاک‌سازی داده‌ها ---
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
+        # اصلاح فضاها و فرمت‌های مخفی در کل دیتابیس
+        df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        
+        # اطمینان از وجود تمام ستون‌ها
         cols = ["شماره فاکتور", "تاریخ", "تاریخ پرداخت", "دسته بندی", "واحد", "مبلغ", "توضیحات", "ثبت کننده", "پرداخت کننده"]
         for c in cols:
             if c not in df.columns: 
                 df[c] = "ثبت نشده" if "تاریخ" in c else (0 if c == "مبلغ" else "نامشخص")
+        
+        # اصلاح فرمت تاریخ‌های قدیمی در دیتابیس (تبدیل 1403/5/1 به 1403/05/01)
+        def standardize_date(date_str):
+            try:
+                p = str(date_str).split('/')
+                if len(p) == 3: return f"{int(p[0])}/{int(p[1]):02d}/{int(p[2]):02d}"
+                return date_str
+            except: return date_str
+        
+        df["تاریخ پرداخت"] = df["تاریخ پرداخت"].apply(standardize_date)
+        df["مبلغ"] = pd.to_numeric(df["مبلغ"], errors='coerce').fillna(0).astype(int)
         return df
     return pd.DataFrame(columns=["شماره فاکتور", "تاریخ", "تاریخ پرداخت", "دسته بندی", "واحد", "مبلغ", "توضیحات", "ثبت کننده", "پرداخت کننده"])
 
@@ -79,7 +87,7 @@ df_exp = load_data()
 df_inc = pd.read_csv(INCOME_FILE) if os.path.exists(INCOME_FILE) else pd.DataFrame(columns=["مبلغ واریزی", "تاریخ", "بابت"])
 balance = df_inc["مبلغ واریزی"].sum() - df_exp["مبلغ"].sum()
 
-# هدر
+# هدر و خروج
 c_h1, c_h2 = st.columns([5, 1])
 with c_h1: st.title("💸 پنل جامع مدیریت تنخواه")
 with c_h2: 
@@ -107,45 +115,34 @@ with tab1:
         cat_sel = st.selectbox("دسته‌بندی", CATEGORIES)
         pay_in = st.text_input("نام پرداخت کننده")
     desc_in = st.text_area("توضیحات")
-    if st.button("🚀 ثبت نهایی در سیستم"):
+    if st.button("🚀 ثبت نهایی"):
         nid = 1 if df_exp.empty else int(df_exp["شماره فاکتور"].max()) + 1
         new_row = {"شماره فاکتور": nid, "تاریخ": df_f, "تاریخ پرداخت": df_p, "دسته بندی": cat_sel, "واحد": u_sel, "مبلغ": int(a_in), "توضیحات": desc_in, "ثبت کننده": st.session_state['user'], "پرداخت کننده": pay_in}
         pd.concat([df_exp, pd.DataFrame([new_row])], ignore_index=True).to_csv(DB_FILE, index=False)
         add_log(f"ثبت فاکتور {nid}", st.session_state['user'])
-        st.success("فاکتور ثبت شد."); st.rerun()
+        st.success("ثبت شد!"); st.rerun()
 
-# ۲. گزارش (با اصلاح‌گر خودکار تاریخ‌های قدیمی)
+# ۲. گزارش (فیلتر قدرتمند)
 with tab2:
-    st.subheader("🔍 فیلتر بر اساس تاریخ پرداخت")
+    st.subheader("🔍 جستجو در بازه زمانی پرداخت")
     c1, c2 = st.columns(2)
-    with c1: start_date = shamsi_date_input("از تاریخ", "rep_s")
-    with c2: end_date = shamsi_date_input("تا تاریخ", "rep_e")
+    with c1: start_d = shamsi_date_input("از تاریخ", "rep_s")
+    with c2: end_d = shamsi_date_input("تا تاریخ", "rep_e")
     
-    temp_df = df_exp.copy()
+    # فیلتر مستقیم روی داده‌های پاک‌سازی شده
+    mask = (df_exp["تاریخ پرداخت"] >= start_d) & (df_exp["تاریخ پرداخت"] <= end_d)
+    f_df = df_exp[mask]
     
-    def fix_date_format(date_str):
-        try:
-            parts = str(date_str).split('/')
-            if len(parts) == 3:
-                return f"{int(parts[0])}/{int(parts[1]):02d}/{int(parts[2]):02d}"
-            return date_str
-        except: return date_str
+    if not f_df.empty:
+        st.write(f"✅ {len(f_df)} مورد پیدا شد:")
+        st.dataframe(f_df, use_container_width=True)
+        out = io.BytesIO()
+        with pd.ExcelWriter(out, engine='xlsxwriter') as wr: f_df.to_excel(wr, index=False)
+        st.download_button("📥 دانلود خروجی اکسل", out.getvalue(), "Tankhah_Report.xlsx")
+    else:
+        st.warning(f"هیچ فاکتوری بین {start_d} تا {end_d} یافت نشد.")
 
-    if not temp_df.empty:
-        temp_df["تاریخ پرداخت"] = temp_df["تاریخ پرداخت"].apply(fix_date_format)
-        mask = (temp_df["تاریخ پرداخت"] >= start_date) & (temp_df["تاریخ پرداخت"] <= end_date)
-        f_df = temp_df[mask]
-        
-        if not f_df.empty:
-            st.success(f"تعداد {len(f_df)} مورد یافت شد.")
-            st.dataframe(f_df, use_container_width=True)
-            out = io.BytesIO()
-            with pd.ExcelWriter(out, engine='xlsxwriter') as wr: f_df.to_excel(wr, index=False)
-            st.download_button("📥 دانلود اکسل", out.getvalue(), "Report.xlsx")
-        else:
-            st.warning("در این بازه زمانی فاکتوری یافت نشد.")
-
-# ۳. شارژ و تاریخچه
+# ۳. شارژ
 with tab3:
     i_amt = st.number_input("مبلغ واریزی (ریال)", min_value=0, key="inc_f")
     st.info(format_money(i_amt))
@@ -158,12 +155,12 @@ with tab3:
     st.write("---")
     st.dataframe(df_inc.sort_index(ascending=False), use_container_width=True)
 
-# ۴. ویرایش و حذف
+# ۴. ویرایش/حذف
 with tab4:
     if not df_exp.empty:
         e_id = st.selectbox("انتخاب فاکتور:", df_exp["شماره فاکتور"].tolist()[::-1])
         idx = df_exp[df_exp["شماره فاکتور"] == e_id].index[0]
-        with st.expander("📝 فرم اصلاح فاکتور", expanded=True):
+        with st.expander("📝 ویرایش جزئیات", expanded=True):
             ca, cb = st.columns(2)
             with ca:
                 v_f = shamsi_date_input("تاریخ فاکتور", "ed_f", df_exp.at[idx, "تاریخ"])
@@ -175,17 +172,17 @@ with tab4:
             v_desc = st.text_area("توضیحات", value=str(df_exp.at[idx, "توضیحات"]))
             
             b1, b2 = st.columns(2)
-            if b1.button("💾 ذخیره تغییرات"):
+            if b1.button("💾 ذخیره"):
                 df_exp.at[idx, "تاریخ"], df_exp.at[idx, "تاریخ پرداخت"], df_exp.at[idx, "مبلغ"] = v_f, v_p, int(v_a)
                 df_exp.at[idx, "توضیحات"], df_exp.at[idx, "پرداخت کننده"] = v_desc, v_pay
                 df_exp.to_csv(DB_FILE, index=False)
                 add_log(f"ویرایش فاکتور {e_id}", st.session_state['user'])
-                st.success("ذخیره شد."); st.rerun()
-            if b2.button("🗑️ حذف فاکتور"):
+                st.rerun()
+            if b2.button("🗑️ حذف"):
                 df_exp.drop(idx).to_csv(DB_FILE, index=False)
                 add_log(f"حذف فاکتور {e_id}", st.session_state['user'])
                 st.rerun()
 
-# ۵. لاگ سیستم
+# ۵. لاگ
 with tab5:
     if os.path.exists(LOG_FILE): st.dataframe(pd.read_csv(LOG_FILE).sort_values(by="زمان", ascending=False), use_container_width=True)
