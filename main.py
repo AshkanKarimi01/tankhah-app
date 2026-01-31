@@ -9,9 +9,6 @@ import io
 DB_FILE = "tankhah_data.csv"
 INCOME_FILE = "income_data.csv"
 LOG_FILE = "audit_log.csv"
-UPLOAD_DIR = "uploaded_images"
-
-if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 
 # --- توابع کمکی ---
 def format_money(amount):
@@ -65,7 +62,7 @@ def load_data():
     return pd.DataFrame(columns=["شماره فاکتور", "تاریخ", "تاریخ پرداخت", "دسته بندی", "واحد", "مبلغ", "توضیحات", "ثبت کننده", "پرداخت کننده"])
 
 df_exp = load_data()
-df_inc = pd.read_csv(INCOME_FILE) if os.path.exists(INCOME_FILE) else pd.DataFrame(columns=["مبلغ واریزی"])
+df_inc = pd.read_csv(INCOME_FILE) if os.path.exists(INCOME_FILE) else pd.DataFrame(columns=["مبلغ واریزی", "تاریخ", "بابت"])
 balance = df_inc["مبلغ واریزی"].sum() - df_exp["مبلغ"].sum()
 
 # --- منوی اصلی ---
@@ -78,100 +75,94 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 ثبت فاکتور", "📊 گزا
 UNITS = ["انبار", "فروش", "مالی", "اداری", "هیات مدیره", "مشاور", "بازرگانی", "ممیز", "فناوری اطلاعات"]
 CATEGORIES = ["غذا", "اسنپ", "پیک", "باربری", "پست", "نوشت افزار", "کارمزد", "آبدارخانه", "متفرقه"]
 
-# ۱. ثبت فاکتور
+# ۱. ثبت فاکتور (با نمایش آنی مبلغ)
 with tab1:
-    with st.form("f_add", clear_on_submit=True):
-        c_l, c_r = st.columns(2)
-        with c_l:
-            d_f = shamsi_date_input("تاریخ فاکتور", "fact_new")
-            d_p = shamsi_date_input("تاریخ پرداخت", "pay_new")
-            unit_in = st.selectbox("واحد", UNITS)
-        with c_r:
-            amt_in = st.number_input("مبلغ (ریال)", min_value=0, step=1000)
-            st.write(f"✍️ **{format_money(amt_in)}**")
-            cat_in = st.selectbox("دسته بندی", CATEGORIES)
-            pay_in = st.text_input("پرداخت کننده")
-        desc_in = st.text_area("توضیحات")
-        if st.form_submit_button("ثبت"):
+    c_l, c_r = st.columns(2)
+    with c_l:
+        d_f = shamsi_date_input("تاریخ فاکتور", "fact_new")
+        d_p = shamsi_date_input("تاریخ پرداخت", "pay_new")
+        unit_in = st.selectbox("واحد", UNITS)
+    with c_r:
+        amt_in = st.number_input("مبلغ (ریال)", min_value=0, step=1000, key="new_amt_input")
+        st.info(f"✍️ **{format_money(amt_in)}**") # نمایش لحظه ای
+        cat_in = st.selectbox("دسته بندی", CATEGORIES)
+        pay_in = st.text_input("پرداخت کننده")
+    desc_in = st.text_area("توضیحات")
+    
+    if st.button("🚀 ثبت نهایی فاکتور"):
+        if amt_in > 0:
             df = load_data()
             nid = 1 if df.empty else int(df["شماره فاکتور"].max()) + 1
             new_row = {"شماره فاکتور": nid, "تاریخ": d_f, "تاریخ پرداخت": d_p, "دسته بندی": cat_in, "واحد": unit_in, "مبلغ": int(amt_in), "توضیحات": desc_in, "ثبت کننده": st.session_state['current_user'], "پرداخت کننده": pay_in}
             pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(DB_FILE, index=False)
             add_log(f"ثبت فاکتور {nid}", st.session_state['current_user'])
-            st.success("ثبت شد!"); st.rerun()
+            st.success("✅ فاکتور با موفقیت ثبت شد!"); st.rerun()
 
-# ۲. گزارش با فیلتر کامل
+# ۲. گزارش با فیلتر تاریخ
 with tab2:
-    st.subheader("🔍 فیلتر پیشرفته گزارش")
+    st.subheader("🔍 فیلتر گزارش")
     c1, c2 = st.columns(2)
-    with c1: start_date = shamsi_date_input("از تاریخ (پرداخت)", "filter_start")
-    with c2: end_date = shamsi_date_input("تا تاریخ (پرداخت)", "filter_end")
+    with c1: start_date = shamsi_date_input("از تاریخ پرداخت", "f_s")
+    with c2: end_date = shamsi_date_input("تا تاریخ پرداخت", "f_e")
     
-    c3, c4, c5 = st.columns(3)
-    f_unit = c3.multiselect("واحدها", UNITS)
-    f_cat = c4.multiselect("دسته بندی", CATEGORIES)
-    search_txt = c5.text_input("جستجو در توضیحات/پرداخت کننده")
-    
-    filtered_df = df_exp.copy()
-    filtered_df = filtered_df[(filtered_df["تاریخ پرداخت"] >= start_date) & (filtered_df["تاریخ پرداخت"] <= end_date)]
-    if f_unit: filtered_df = filtered_df[filtered_df["واحد"].isin(f_unit)]
-    if f_cat: filtered_df = filtered_df[filtered_df["دسته بندی"].isin(f_cat)]
-    if search_txt: filtered_df = filtered_df[filtered_df["توضیحات"].str.contains(search_txt, na=False) | filtered_df["پرداخت کننده"].str.contains(search_txt, na=False)]
-    
+    filtered_df = df_exp[(df_exp["تاریخ پرداخت"] >= start_date) & (df_exp["تاریخ پرداخت"] <= end_date)]
     st.dataframe(filtered_df, use_container_width=True)
+    
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as wr: filtered_df.to_excel(wr, index=False)
-    st.download_button("📥 دانلود اکسل این فیلتر", output.getvalue(), "Filtered_Report.xlsx")
+    st.download_button("📥 دانلود اکسل", output.getvalue(), "Report.xlsx")
 
-# ۳. شارژ تنخواه
+# ۳. شارژ تنخواه + تاریخچه واریز
 with tab3:
-    with st.form("f_inc"):
-        i_amt = st.number_input("مبلغ واریزی (ریال)", min_value=0)
-        st.write(format_money(i_amt))
-        i_desc = st.text_input("بابت")
-        if st.form_submit_button("ثبت واریز"):
+    with st.expander("➕ فرم واریز جدید", expanded=True):
+        i_amt = st.number_input("مبلغ واریزی (ریال)", min_value=0, key="inc_amt_input")
+        st.info(format_money(i_amt))
+        i_desc = st.text_input("بابت / توضیح")
+        if st.button("ثبت شارژ"):
             df_i = pd.read_csv(INCOME_FILE) if os.path.exists(INCOME_FILE) else pd.DataFrame(columns=["مبلغ واریزی", "تاریخ", "بابت"])
             new_i = {"مبلغ واریزی": i_amt, "تاریخ": jdatetime.date.today().strftime("%Y/%m/%d"), "بابت": i_desc}
             pd.concat([df_i, pd.DataFrame([new_i])], ignore_index=True).to_csv(INCOME_FILE, index=False)
             add_log(f"شارژ تنخواه: {i_amt}", st.session_state['current_user'])
-            st.rerun()
+            st.success("حساب شارژ شد"); st.rerun()
+    
+    st.subheader("📜 تاریخچه شارژهای قبلی")
+    if not df_inc.empty:
+        st.table(df_inc.sort_index(ascending=False))
+    else:
+        st.write("تاریخچه‌ای موجود نیست.")
 
-# ۴. ویرایش کامل (تمام فیلدها)
+# ۴. ویرایش کامل (نمایش آنی تغییرات)
 with tab4:
     if not df_exp.empty:
-        edit_id = st.selectbox("انتخاب فاکتور برای ویرایش کامل:", df_exp["شماره فاکتور"].tolist()[::-1])
+        edit_id = st.selectbox("انتخاب فاکتور:", df_exp["شماره فاکتور"].tolist()[::-1])
         idx = df_exp[df_exp["شماره فاکتور"] == edit_id].index[0]
         
-        with st.form("full_edit"):
-            st.warning(f"در حال ویرایش فاکتور شماره {edit_id}")
-            ce1, ce2 = st.columns(2)
-            with ce1:
-                new_df = shamsi_date_input("اصلاح تاریخ فاکتور", "e_f", df_exp.at[idx, "تاریخ"])
-                new_dp = shamsi_date_input("اصلاح تاریخ پرداخت", "e_p", df_exp.at[idx, "تاریخ پرداخت"])
-                new_u = st.selectbox("اصلاح واحد", UNITS, index=UNITS.index(df_exp.at[idx, "واحد"]) if df_exp.at[idx, "واحد"] in UNITS else 0)
-            with ce2:
-                new_amt = st.number_input("اصلاح مبلغ (ریال)", value=int(df_exp.at[idx, "مبلغ"]))
-                st.write(format_money(new_amt))
-                new_cat = st.selectbox("اصلاح دسته بندی", CATEGORIES, index=CATEGORIES.index(df_exp.at[idx, "دسته بندی"]) if df_exp.at[idx, "دسته بندی"] in CATEGORIES else 0)
-                new_pay = st.text_input("اصلاح پرداخت کننده", value=str(df_exp.at[idx, "پرداخت کننده"]))
-            
-            new_desc = st.text_area("اصلاح توضیحات", value=str(df_exp.at[idx, "توضیحات"]))
-            
-            cb1, cb2 = st.columns(2)
-            if cb1.form_submit_button("💾 ذخیره تغییرات نهایی"):
-                df_exp.at[idx, "تاریخ"], df_exp.at[idx, "تاریخ پرداخت"] = new_df, new_dp
-                df_exp.at[idx, "واحد"], df_exp.at[idx, "مبلغ"] = new_u, new_amt
-                df_exp.at[idx, "دسته بندی"], df_exp.at[idx, "پرداخت کننده"] = new_cat, new_pay
-                df_exp.at[idx, "توضیحات"] = new_desc
-                df_exp.to_csv(DB_FILE, index=False)
-                add_log(f"ویرایش کامل فاکتور {edit_id}", st.session_state['current_user'])
-                st.success("تغییرات با موفقیت اعمال شد."); st.rerun()
-                
-            if cb2.form_submit_button("🗑️ حذف این فاکتور"):
-                df_exp = df_exp.drop(idx)
-                df_exp.to_csv(DB_FILE, index=False)
-                add_log(f"حذف فاکتور {edit_id}", st.session_state['current_user'])
-                st.error("فاکتور حذف شد."); st.rerun()
+        ce1, ce2 = st.columns(2)
+        with ce1:
+            n_f = shamsi_date_input("تاریخ فاکتور", "e_f", df_exp.at[idx, "تاریخ"])
+            n_p = shamsi_date_input("تاریخ پرداخت", "e_p", df_exp.at[idx, "تاریخ پرداخت"])
+            n_u = st.selectbox("واحد", UNITS, index=UNITS.index(df_exp.at[idx, "واحد"]) if df_exp.at[idx, "واحد"] in UNITS else 0)
+        with ce2:
+            n_amt = st.number_input("مبلغ", value=int(df_exp.at[idx, "مبلغ"]), key="edit_amt_input")
+            st.info(format_money(n_amt)) # نمایش لحظه ای در ویرایش
+            n_cat = st.selectbox("دسته بندی", CATEGORIES, index=CATEGORIES.index(df_exp.at[idx, "دسته بندی"]) if df_exp.at[idx, "دسته بندی"] in CATEGORIES else 0)
+            n_pay = st.text_input("پرداخت کننده", value=str(df_exp.at[idx, "پرداخت کننده"]))
+        
+        n_desc = st.text_area("توضیحات", value=str(df_exp.at[idx, "توضیحات"]))
+        
+        col_b1, col_b2 = st.columns(2)
+        if col_b1.button("💾 ذخیره تغییرات"):
+            df_exp.at[idx, "تاریخ"], df_exp.at[idx, "تاریخ پرداخت"], df_exp.at[idx, "واحد"] = n_f, n_p, n_u
+            df_exp.at[idx, "مبلغ"], df_exp.at[idx, "دسته بندی"], df_exp.at[idx, "پرداخت کننده"] = n_amt, n_cat, n_pay
+            df_exp.at[idx, "توضیحات"] = n_desc
+            df_exp.to_csv(DB_FILE, index=False)
+            add_log(f"ویرایش فاکتور {edit_id}", st.session_state['current_user'])
+            st.success("تغییرات اعمال شد"); st.rerun()
+        if col_b2.button("🗑️ حذف فاکتور"):
+            df_exp = df_exp.drop(idx)
+            df_exp.to_csv(DB_FILE, index=False)
+            add_log(f"حذف فاکتور {edit_id}", st.session_state['current_user'])
+            st.rerun()
 
 # ۵. لاگ سیستم
 with tab5:
