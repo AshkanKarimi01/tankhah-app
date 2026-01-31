@@ -105,28 +105,46 @@ with tab1:
         add_log(f"ثبت فاکتور {nid}", st.session_state['user'])
         st.success("انجام شد"); st.rerun()
 
-# ۲. گزارش (بخش اصلاح شده)
+# ۲. گزارش (نسخه اصلاح شده برای نمایش فاکتورهای قدیمی)
 with tab2:
     st.subheader("🔍 فیلتر بر اساس تاریخ پرداخت")
     c1, c2 = st.columns(2)
     with c1: start_date = shamsi_date_input("از تاریخ", "rep_s")
     with c2: end_date = shamsi_date_input("تا تاریخ", "rep_e")
     
-    # فیلتر دقیق بر اساس رشته‌های تاریخ استاندارد شده
-    f_df = df_exp[(df_exp["تاریخ پرداخت"] >= start_date) & (df_exp["تاریخ پرداخت"] <= end_date)].copy()
+    # کپی از داده‌ها برای فیلتر
+    temp_df = df_exp.copy()
     
-    if not f_df.empty:
-        st.success(f"تعداد {len(f_df)} مورد یافت شد.")
-        st.dataframe(f_df, use_container_width=True)
-        
-        # دکمه دانلود اکسل برای داده‌های فیلتر شده
-        out = io.BytesIO()
-        with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
-            f_df.to_excel(wr, index=False)
-        st.download_button("📥 دانلود خروجی اکسل (لیست بالا)", out.getvalue(), f"Report_{start_date.replace('/','-')}.xlsx")
-    else:
-        st.warning("در این بازه زمانی هیچ فاکتوری ثبت نشده است.")
+    # --- اصلاح خودکار فرمت تاریخ‌های قدیمی برای مطابقت با فیلتر ---
+    def fix_date_format(date_str):
+        try:
+            parts = str(date_str).split('/')
+            if len(parts) == 3:
+                return f"{int(parts[0])}/{int(parts[1]):02d}/{int(parts[2]):02d}"
+            return date_str
+        except:
+            return date_str
 
+    if not temp_df.empty:
+        temp_df["تاریخ پرداخت"] = temp_df["تاریخ پرداخت"].apply(fix_date_format)
+        
+        # اعمال فیلتر
+        mask = (temp_df["تاریخ پرداخت"] >= start_date) & (temp_df["تاریخ پرداخت"] <= end_date)
+        f_df = temp_df[mask]
+        
+        if not f_df.empty:
+            st.success(f"تعداد {len(f_df)} فاکتور در این بازه پیدا شد.")
+            st.dataframe(f_df, use_container_width=True)
+            
+            # دکمه دانلود
+            out = io.BytesIO()
+            with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
+                f_df.to_excel(wr, index=False)
+            st.download_button("📥 دانلود اکسل این لیست", out.getvalue(), "Report.xlsx")
+        else:
+            st.warning("در این بازه زمانی هیچ فاکتوری یافت نشد. مطمئن شوید تاریخ پرداخت فاکتورها در این بازه است.")
+    else:
+        st.info("هنوز هیچ فاکتوری در سیستم ثبت نشده است.")
 # ۳. شارژ و تاریخچه
 with tab3:
     i_amt = st.number_input("مبلغ واریز (ریال)", min_value=0, key="inc_f")
@@ -172,3 +190,4 @@ with tab4:
 # ۵. لاگ
 with tab5:
     if os.path.exists(LOG_FILE): st.dataframe(pd.read_csv(LOG_FILE).sort_values(by="زمان", ascending=False))
+
