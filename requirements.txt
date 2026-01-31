@@ -2,3 +2,4 @@ streamlit
 pandas
 jdatetime
 xlsxwriter
+streamlit-jalali-date-picker
